@@ -10,11 +10,19 @@ function definitelyUnsent(err) {
 }
 
 export class ClickHouseWriter {
-  constructor(client, { maxTradeBuffer = 100000, maxBookBuffer = 20000, maxQuarantineBatches = 200 } = {}) {
+  constructor(client, {
+    maxTradeBuffer = 100000,
+    maxBookBuffer = 20000,
+    maxQuarantineBatches = 200,
+    tradeTable = 'raw_trades_v2',
+    bookTable = 'orderbook_snapshots_v2'
+  } = {}) {
     this.client = client;
     this.maxTradeBuffer = maxTradeBuffer;
     this.maxBookBuffer = maxBookBuffer;
     this.maxQuarantineBatches = maxQuarantineBatches;
+    this.tradeTable = tradeTable;
+    this.bookTable = bookTable;
     this.tradeBuffer = [];
     this.bookBuffer = [];
     this.tradeFlushInFlight = false;
@@ -65,7 +73,7 @@ export class ClickHouseWriter {
     this.tradeFlushInFlight = true;
     const batch = this.tradeBuffer.splice(0, Math.min(limit, this.tradeBuffer.length));
     try {
-      await this.client.insert({ table: 'raw_trades', values: batch, format: 'JSONEachRow' });
+      await this.client.insert({ table: this.tradeTable, values: batch, format: 'JSONEachRow' });
       this.lastTradeFlushAt = new Date().toISOString();
     } catch (err) {
       this._handleFailure('trades', batch, err);
@@ -80,7 +88,7 @@ export class ClickHouseWriter {
     this.bookFlushInFlight = true;
     const batch = this.bookBuffer.splice(0, Math.min(limit, this.bookBuffer.length));
     try {
-      await this.client.insert({ table: 'orderbook_snapshots', values: batch, format: 'JSONEachRow' });
+      await this.client.insert({ table: this.bookTable, values: batch, format: 'JSONEachRow' });
       this.lastBookFlushAt = new Date().toISOString();
     } catch (err) {
       this._handleFailure('books', batch, err);
@@ -91,12 +99,13 @@ export class ClickHouseWriter {
   }
 
   async flushAll() {
-    const results = await Promise.allSettled([this.flushTrades(), this.flushBooks()]);
-    return results;
+    return await Promise.allSettled([this.flushTrades(), this.flushBooks()]);
   }
 
   health() {
     return {
+      trade_table: this.tradeTable,
+      book_table: this.bookTable,
       trade_buffer: this.tradeBuffer.length,
       book_buffer: this.bookBuffer.length,
       trade_flush_in_flight: this.tradeFlushInFlight,
