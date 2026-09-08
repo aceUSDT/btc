@@ -7,7 +7,7 @@ test('book failure never requeues a successfully committed trade batch', async (
   const client = {
     async insert({ table, values }) {
       calls.push({ table, values });
-      if (table === 'orderbook_snapshots') {
+      if (table === 'orderbook_snapshots_v2') {
         const err = new Error('connection refused');
         err.code = 'ECONNREFUSED';
         throw err;
@@ -20,7 +20,8 @@ test('book failure never requeues a successfully committed trade batch', async (
   await writer.flushAll();
   assert.equal(writer.tradeBuffer.length, 0);
   assert.equal(writer.bookBuffer.length, 1);
-  assert.equal(calls.filter(x => x.table === 'raw_trades').length, 1);
+  assert.equal(calls.filter(x => x.table === 'raw_trades_v2').length, 1);
+  assert.equal(calls.filter(x => x.table === 'orderbook_snapshots_v2').length, 1);
 });
 
 test('ambiguous trade timeout is quarantined instead of blindly requeued', async () => {
@@ -52,4 +53,11 @@ test('definite pre-send trade failure can be requeued safely', async () => {
   await assert.rejects(() => writer.flushTrades());
   assert.equal(writer.tradeBuffer.length, 1);
   assert.equal(writer.quarantine.length, 0);
+});
+
+test('V2 table names are exposed in health for operational verification', () => {
+  const writer = new ClickHouseWriter({ insert: async () => {} });
+  const health = writer.health();
+  assert.equal(health.trade_table, 'raw_trades_v2');
+  assert.equal(health.book_table, 'orderbook_snapshots_v2');
 });
