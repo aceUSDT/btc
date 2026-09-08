@@ -1,13 +1,13 @@
 {
   "name": "btc-global-intelligence-collector",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {
     "bootstrap": "node src/bootstrap.js",
-    "start": "node src/bootstrap.js && node src/v4.js",
-    "check": "node --check src/v4.js && node --check src/direct-market.js && node --check src/orderbook-state.js && node --check src/structure-engine.js && node --check src/external-v4.js && node --check src/external-intelligence.js && node --check src/event-calendar.js && node --check src/signal-engine.js && node --check src/coverage.js",
+    "start": "node src/bootstrap.js && node src/v5.js",
+    "check": "node --check src/v5.js && node --check src/direct-market.js && node --check src/direct-market-safe.js && node --check src/orderbook-state.js && node --check src/structure-engine.js && node --check src/microstructure-engine.js && node --check src/external-v5.js && node --check src/external-v4.js && node --check src/external-intelligence.js && node --check src/options-v4.js && node --check src/event-calendar.js && node --check src/signal-v5.js && node --check src/signal-engine.js && node --check src/coverage.js",
     "test": "npm run check && node --test test/*.test.js"
   },
   "dependencies": {
