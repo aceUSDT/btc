@@ -1,13 +1,14 @@
 {
   "name": "btc-global-intelligence-collector",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {
     "bootstrap": "node src/bootstrap.js",
-    "start": "node src/bootstrap.js && node src/index.js",
-    "test": "node --test test/*.test.js"
+    "start": "node src/bootstrap.js && node src/v3.js",
+    "check": "node --check src/v3.js && node --check src/external-intelligence.js && node --check src/signal-engine.js && node --check src/coverage.js",
+    "test": "npm run check && node --test test/*.test.js"
   },
   "dependencies": {
     "@clickhouse/client": "^1.12.1",
