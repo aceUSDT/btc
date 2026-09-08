@@ -1,9 +1,6 @@
 CREATE DATABASE IF NOT EXISTS btc;
 
 -- Remove only the prototype objects created by the earlier BTC collector.
--- They live inside this dedicated BTC ClickHouse service and are no longer
--- referenced by the hardened V2 collector. Dropping them also releases the
--- small Railway volume from the prototype's oversized raw-tick backlog.
 DROP VIEW IF EXISTS btc.minute_flow_mv;
 DROP TABLE IF EXISTS btc.minute_flow_mv;
 DROP TABLE IF EXISTS btc.minute_flow;
@@ -11,8 +8,6 @@ DROP TABLE IF EXISTS btc.orderbook_snapshots;
 DROP TABLE IF EXISTS btc.raw_trades;
 DROP TABLE IF EXISTS btc.collector_health;
 
--- V2 tables deliberately use new names so an old table engine can never be
--- silently inherited after an upgrade.
 CREATE TABLE IF NOT EXISTS btc.raw_trades_v2
 (
     event_time DateTime64(3, 'UTC'),
@@ -72,6 +67,37 @@ SELECT
     count() AS trades
 FROM btc.raw_trades_v2 FINAL
 GROUP BY minute, venue, market_type, symbol;
+
+-- Compact one-row-per-minute feature history. Raw ticks stay short-lived so a
+-- small Railway volume cannot fill up, while the model/regime/backtest features
+-- remain available for a full year.
+CREATE TABLE IF NOT EXISTS btc.intelligence_1m_v3
+(
+    minute DateTime('UTC'),
+    ingested_at DateTime64(3, 'UTC'),
+    price_usd Float64,
+    spot_cvd_1m Nullable(Float64),
+    spot_cvd_5m Nullable(Float64),
+    perp_cvd_1m Nullable(Float64),
+    perp_cvd_5m Nullable(Float64),
+    open_interest_usd Nullable(Float64),
+    funding_oi_weighted Nullable(Float64),
+    long_liq_5m_usd Nullable(Float64),
+    short_liq_5m_usd Nullable(Float64),
+    bull_score Nullable(Float64),
+    bear_score Nullable(Float64),
+    trade_confidence Nullable(Float64),
+    data_quality Nullable(Float64),
+    regime LowCardinality(String),
+    driver LowCardinality(String),
+    event_risk LowCardinality(String),
+    payload String
+)
+ENGINE = ReplacingMergeTree(ingested_at)
+PARTITION BY toYYYYMM(minute)
+ORDER BY minute
+TTL minute + INTERVAL 365 DAY DELETE
+SETTINGS index_granularity = 8192;
 
 CREATE TABLE IF NOT EXISTS btc.collector_health_v2
 (
