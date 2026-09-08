@@ -1,9 +1,18 @@
 CREATE DATABASE IF NOT EXISTS btc;
 
--- V2 tables deliberately use new names. The first prototype created legacy
--- MergeTree/Null objects with the old names. Reusing those names would make a
--- bootstrap silently inherit the wrong engines, so the hardened collector
--- writes only to these isolated V2 tables.
+-- Remove only the prototype objects created by the earlier BTC collector.
+-- They live inside this dedicated BTC ClickHouse service and are no longer
+-- referenced by the hardened V2 collector. Dropping them also releases the
+-- small Railway volume from the prototype's oversized raw-tick backlog.
+DROP VIEW IF EXISTS btc.minute_flow_mv;
+DROP TABLE IF EXISTS btc.minute_flow_mv;
+DROP TABLE IF EXISTS btc.minute_flow;
+DROP TABLE IF EXISTS btc.orderbook_snapshots;
+DROP TABLE IF EXISTS btc.raw_trades;
+DROP TABLE IF EXISTS btc.collector_health;
+
+-- V2 tables deliberately use new names so an old table engine can never be
+-- silently inherited after an upgrade.
 CREATE TABLE IF NOT EXISTS btc.raw_trades_v2
 (
     event_time DateTime64(3, 'UTC'),
@@ -21,8 +30,10 @@ CREATE TABLE IF NOT EXISTS btc.raw_trades_v2
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (venue, market_type, symbol, event_time_ms, trade_id)
-TTL event_time + INTERVAL 6 HOUR DELETE
+TTL event_time + INTERVAL 30 MINUTE DELETE
 SETTINGS index_granularity = 8192;
+
+ALTER TABLE btc.raw_trades_v2 MODIFY TTL event_time + INTERVAL 30 MINUTE DELETE;
 
 CREATE TABLE IF NOT EXISTS btc.orderbook_snapshots_v2
 (
@@ -44,11 +55,11 @@ CREATE TABLE IF NOT EXISTS btc.orderbook_snapshots_v2
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (venue, market_type, symbol, event_time_ms, sequence)
-TTL event_time + INTERVAL 24 HOUR DELETE
+TTL event_time + INTERVAL 2 HOUR DELETE
 SETTINGS index_granularity = 8192;
 
--- New view name avoids colliding with the prototype's physical minute_flow
--- table. FINAL is safe here because raw_trades_v2 is always ReplacingMergeTree.
+ALTER TABLE btc.orderbook_snapshots_v2 MODIFY TTL event_time + INTERVAL 2 HOUR DELETE;
+
 CREATE OR REPLACE VIEW btc.minute_flow_v2 AS
 SELECT
     toStartOfMinute(event_time) AS minute,
