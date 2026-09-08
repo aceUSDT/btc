@@ -1,0 +1,20 @@
+{
+  "name": "btc-global-intelligence-collector",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "bootstrap": "node src/bootstrap.js",
+    "start": "node src/bootstrap.js && node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.12.1",
+    "@supabase/supabase-js": "^2.57.4",
+    "fastify": "^5.6.1",
+    "ioredis": "^5.7.0",
+    "pino": "^9.9.4",
+    "ws": "^8.18.3"
+  }
+}
