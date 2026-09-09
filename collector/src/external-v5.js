@@ -59,8 +59,12 @@ export class ExternalV5Hub{
   async fast(){
     const p=Number(this.getPrice?.())||0;
     const[cg,opt,cross,stable,supabase]=await Promise.all([collectCoinGlassV4(p),collectOptionsV4(),collectCrossAssets(),collectStablecoins(),checkSupabaseSink()]);
-    this.state.coinglass=cg;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable;this.state.supabase_sink=supabase;
-    report('fast',{coinglass:cg,options:opt,cross_asset:cross,stablecoins:stable,supabase});
+    // CoinGlass entitlement failures often return schema-shaped null values.
+    // Strip those unavailable metric containers so V5 falls back to direct
+    // WebSocket CVD/OI/funding instead of coercing provider nulls to numeric 0.
+    const cgSafe=cg?.status==='UNAVAILABLE'?{...cg,flow:{},open_interest:{},funding:{},liquidations:{},orderbook:null,etf:null}:cg;
+    this.state.coinglass=cgSafe;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable;this.state.supabase_sink=supabase;
+    report('fast',{coinglass:cgSafe,options:opt,cross_asset:cross,stablecoins:stable,supabase});
   }
   async medium(){
     const[pred,news,onchain,freeOnchain,glassnode,bls,sentiment]=await Promise.all([collectPredictionMarkets(),collectNews(),collectOnchain(),collectFreeOnchainV5(),collectGlassnodeV1(),collectBlsActuals(),collectFearGreed()]);
