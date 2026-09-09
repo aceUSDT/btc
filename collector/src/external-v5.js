@@ -23,10 +23,19 @@ function mergeOnchain(primary,free,premium){
     }
   };
 }
+function report(group,values){
+  // Production-safe diagnostics: source/status only, never credentials or raw payloads.
+  console.log(JSON.stringify({type:'external_health',group,at:new Date().toISOString(),sources:Object.fromEntries(Object.entries(values).map(([k,v])=>[k,{status:v?.status||'UNKNOWN',error:v?.error?String(v.error).slice(0,180):null}]))}));
+}
 
 export class ExternalV5Hub{
   constructor({getPrice}){this.getPrice=getPrice;this.state={};this.timers=[];this.running=false}
-  async fast(){const p=Number(this.getPrice?.())||0;const[cg,opt,cross,stable]=await Promise.all([collectCoinGlassV4(p),collectOptionsV4(),collectCrossAssets(),collectStablecoins()]);this.state.coinglass=cg;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable}
+  async fast(){
+    const p=Number(this.getPrice?.())||0;
+    const[cg,opt,cross,stable]=await Promise.all([collectCoinGlassV4(p),collectOptionsV4(),collectCrossAssets(),collectStablecoins()]);
+    this.state.coinglass=cg;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable;
+    report('fast',{coinglass:cg,options:opt,cross_asset:cross,stablecoins:stable});
+  }
   async medium(){
     const[pred,news,onchain,freeOnchain,glassnode,bls,sentiment]=await Promise.all([collectPredictionMarkets(),collectNews(),collectOnchain(),collectFreeOnchainV5(),collectGlassnodeV1(),collectBlsActuals(),collectFearGreed()]);
     this.state.prediction_markets=pred;
@@ -34,8 +43,9 @@ export class ExternalV5Hub{
     this.state.onchain=mergeOnchain(onchain,freeOnchain,glassnode);
     this.state.bls=bls;
     this.state.sentiment=sentiment;
+    report('medium',{prediction_markets:pred,news,onchain:this.state.onchain,free_onchain:freeOnchain,glassnode,bls,sentiment});
   }
-  async slow(){this.state.macro=await collectMacro()}
+  async slow(){this.state.macro=await collectMacro();report('slow',{macro:this.state.macro})}
   start(){if(this.running)return;this.running=true;void this.fast();void this.medium();void this.slow();this.timers.push(setInterval(()=>void this.fast(),Number(process.env.EXTERNAL_FAST_MS||30000)),setInterval(()=>void this.medium(),Number(process.env.EXTERNAL_MEDIUM_MS||120000)),setInterval(()=>void this.slow(),Number(process.env.EXTERNAL_SLOW_MS||300000)));for(const t of this.timers)t.unref?.()}
   stop(){for(const t of this.timers)clearInterval(t);this.timers=[];this.running=false}
   snapshot(){
