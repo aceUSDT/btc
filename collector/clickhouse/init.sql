@@ -73,7 +73,7 @@ SELECT
 FROM btc.raw_trades_v2 FINAL
 GROUP BY minute, venue, market_type, symbol;
 
--- Compact one-row-per-minute feature history. Supabase is the durable archive;
+-- Compact one-row-per-minute feature history. Supabase is the durable archive.
 -- ClickHouse keeps a bounded 30-day calibration window on the 500 MB volume.
 CREATE TABLE IF NOT EXISTS btc.intelligence_1m_v3
 (
