@@ -23,9 +23,19 @@ function mergeOnchain(primary,free,premium){
     }
   };
 }
+function sourceDiag(k,v){
+  const d={status:v?.status||'UNKNOWN',error:v?.error?String(v.error).slice(0,180):null};
+  if(k==='coinglass'){
+    d.required_ok=v?.coverage?.required_ok??null;
+    d.required_total=v?.coverage?.required_total??null;
+    const failures=v?.coverage?.optional_failures||{};
+    d.failures=Object.fromEntries(Object.entries(failures).slice(0,8).map(([name,msg])=>[name,String(msg).slice(0,160)]));
+  }
+  return d;
+}
 function report(group,values){
-  // Production-safe diagnostics: source/status only, never credentials or raw payloads.
-  console.log(JSON.stringify({type:'external_health',group,at:new Date().toISOString(),sources:Object.fromEntries(Object.entries(values).map(([k,v])=>[k,{status:v?.status||'UNKNOWN',error:v?.error?String(v.error).slice(0,180):null}]))}));
+  // Production-safe diagnostics: source/status/endpoint errors only; never credentials or raw payloads.
+  console.log(JSON.stringify({type:'external_health',group,at:new Date().toISOString(),sources:Object.fromEntries(Object.entries(values).map(([k,v])=>[k,sourceDiag(k,v)]))}));
 }
 
 export class ExternalV5Hub{
