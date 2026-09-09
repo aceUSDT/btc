@@ -23,6 +23,20 @@ function mergeOnchain(primary,free,premium){
     }
   };
 }
+async function checkSupabaseSink(){
+  const url=String(process.env.SUPABASE_URL||'').replace(/\/$/,'');
+  const key=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'';
+  if(!url||!key)return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:'Supabase URL/secret not configured'};
+  const c=new AbortController(),tm=setTimeout(()=>c.abort(),7000);
+  try{
+    const r=await fetch(`${url}/rest/v1/btc_market_snapshots?select=observed_at&order=observed_at.desc&limit=1`,{headers:{accept:'application/json',apikey:key},signal:c.signal});
+    const text=await r.text();
+    if(!r.ok)return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:`HTTP ${r.status}: ${text.slice(0,160)}`};
+    let rows=[];try{rows=JSON.parse(text)}catch{}
+    return{source:'supabase_sink',status:'LIVE',observed_at:new Date().toISOString(),latest_market_snapshot_at:rows?.[0]?.observed_at||null};
+  }catch(e){return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:String(e)}
+  finally{clearTimeout(tm)}
+}
 function sourceDiag(k,v){
   const d={status:v?.status||'UNKNOWN',error:v?.error?String(v.error).slice(0,180):null};
   if(k==='coinglass'){
@@ -31,6 +45,7 @@ function sourceDiag(k,v){
     const failures=v?.coverage?.optional_failures||{};
     d.failures=Object.fromEntries(Object.entries(failures).slice(0,8).map(([name,msg])=>[name,String(msg).slice(0,160)]));
   }
+  if(k==='supabase')d.latest_market_snapshot_at=v?.latest_market_snapshot_at||null;
   return d;
 }
 function report(group,values){
@@ -42,9 +57,9 @@ export class ExternalV5Hub{
   constructor({getPrice}){this.getPrice=getPrice;this.state={};this.timers=[];this.running=false}
   async fast(){
     const p=Number(this.getPrice?.())||0;
-    const[cg,opt,cross,stable]=await Promise.all([collectCoinGlassV4(p),collectOptionsV4(),collectCrossAssets(),collectStablecoins()]);
-    this.state.coinglass=cg;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable;
-    report('fast',{coinglass:cg,options:opt,cross_asset:cross,stablecoins:stable});
+    const[cg,opt,cross,stable,supabase]=await Promise.all([collectCoinGlassV4(p),collectOptionsV4(),collectCrossAssets(),collectStablecoins(),checkSupabaseSink()]);
+    this.state.coinglass=cg;this.state.options=opt;this.state.cross_asset=cross;this.state.stablecoins=stable;this.state.supabase_sink=supabase;
+    report('fast',{coinglass:cg,options:opt,cross_asset:cross,stablecoins:stable,supabase});
   }
   async medium(){
     const[pred,news,onchain,freeOnchain,glassnode,bls,sentiment]=await Promise.all([collectPredictionMarkets(),collectNews(),collectOnchain(),collectFreeOnchainV5(),collectGlassnodeV1(),collectBlsActuals(),collectFearGreed()]);
@@ -63,7 +78,7 @@ export class ExternalV5Hub{
     for(const[k,v]of Object.entries(out)){
       if(!v?.observed_at)continue;
       const age=Date.now()-Date.parse(v.observed_at);
-      const th=k==='onchain'?FRESHNESS_THRESHOLDS_MS.onchain:k==='sentiment'?36*60*60*1000:k==='prediction_markets'?FRESHNESS_THRESHOLDS_MS.prediction_market:k==='news'?FRESHNESS_THRESHOLDS_MS.news:k==='macro'||k==='bls'?FRESHNESS_THRESHOLDS_MS.macro_release:k==='options'?FRESHNESS_THRESHOLDS_MS.options:60000;
+      const th=k==='onchain'?FRESHNESS_THRESHOLDS_MS.onchain:k==='sentiment'?36*60*60*1000:k==='prediction_markets'?FRESHNESS_THRESHOLDS_MS.prediction_market:k==='news'?FRESHNESS_THRESHOLDS_MS.news:k==='macro'||k==='bls'?FRESHNESS_THRESHOLDS_MS.macro_release:k==='options'?FRESHNESS_THRESHOLDS_MS.options:k==='supabase_sink'?60000:60000;
       v.age_ms=age;
       if(v.status==='LIVE')v.status=freshnessStatus(age,th);
     }
