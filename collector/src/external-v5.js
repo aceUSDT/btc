@@ -34,8 +34,9 @@ async function checkSupabaseSink(){
     if(!r.ok)return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:`HTTP ${r.status}: ${text.slice(0,160)}`};
     let rows=[];try{rows=JSON.parse(text)}catch{}
     return{source:'supabase_sink',status:'LIVE',observed_at:new Date().toISOString(),latest_market_snapshot_at:rows?.[0]?.observed_at||null};
-  }catch(e){return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:String(e)}
-  finally{clearTimeout(tm)}
+  }catch(e){
+    return{source:'supabase_sink',status:'UNAVAILABLE',observed_at:new Date().toISOString(),error:String(e)};
+  }finally{clearTimeout(tm)}
 }
 function sourceDiag(k,v){
   const d={status:v?.status||'UNKNOWN',error:v?.error?String(v.error).slice(0,180):null};
