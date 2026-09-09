@@ -1,6 +1,6 @@
 CREATE DATABASE IF NOT EXISTS btc;
 
--- Remove only the prototype objects created by the earlier BTC collector.
+-- Remove only prototype/legacy objects from the earlier collector generations.
 DROP VIEW IF EXISTS btc.minute_flow_mv;
 DROP TABLE IF EXISTS btc.minute_flow_mv;
 DROP TABLE IF EXISTS btc.minute_flow;
@@ -8,7 +8,15 @@ DROP TABLE IF EXISTS btc.orderbook_snapshots;
 DROP TABLE IF EXISTS btc.raw_trades;
 DROP TABLE IF EXISTS btc.collector_health;
 
-CREATE TABLE IF NOT EXISTS btc.raw_trades_v2
+-- Production recovery: raw V2 trade/book history is intentionally ephemeral
+-- (30 minutes / 2 hours). If the small Railway volume has previously filled,
+-- recreating these two raw tables is the safest way to release old parts before
+-- the V5 collector starts. Durable intelligence history is NOT dropped.
+DROP VIEW IF EXISTS btc.minute_flow_v2;
+DROP TABLE IF EXISTS btc.raw_trades_v2 SYNC;
+DROP TABLE IF EXISTS btc.orderbook_snapshots_v2 SYNC;
+
+CREATE TABLE btc.raw_trades_v2
 (
     event_time DateTime64(3, 'UTC'),
     ingested_at DateTime64(3, 'UTC'),
@@ -28,9 +36,7 @@ ORDER BY (venue, market_type, symbol, event_time_ms, trade_id)
 TTL event_time + INTERVAL 30 MINUTE DELETE
 SETTINGS index_granularity = 8192;
 
-ALTER TABLE btc.raw_trades_v2 MODIFY TTL event_time + INTERVAL 30 MINUTE DELETE;
-
-CREATE TABLE IF NOT EXISTS btc.orderbook_snapshots_v2
+CREATE TABLE btc.orderbook_snapshots_v2
 (
     event_time DateTime64(3, 'UTC'),
     ingested_at DateTime64(3, 'UTC'),
@@ -53,8 +59,6 @@ ORDER BY (venue, market_type, symbol, event_time_ms, sequence)
 TTL event_time + INTERVAL 2 HOUR DELETE
 SETTINGS index_granularity = 8192;
 
-ALTER TABLE btc.orderbook_snapshots_v2 MODIFY TTL event_time + INTERVAL 2 HOUR DELETE;
-
 CREATE OR REPLACE VIEW btc.minute_flow_v2 AS
 SELECT
     toStartOfMinute(event_time) AS minute,
@@ -68,9 +72,8 @@ SELECT
 FROM btc.raw_trades_v2 FINAL
 GROUP BY minute, venue, market_type, symbol;
 
--- Compact one-row-per-minute feature history. Raw ticks stay short-lived so a
--- small Railway volume cannot fill up, while the model/regime/backtest features
--- remain available for a full year.
+-- Compact one-row-per-minute feature history. This survives raw-table recovery
+-- and is retained for one year for calibration/backtesting.
 CREATE TABLE IF NOT EXISTS btc.intelligence_1m_v3
 (
     minute DateTime('UTC'),
