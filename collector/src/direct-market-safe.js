@@ -70,6 +70,18 @@ export class SafeDirectMarketHub extends DirectMarketHub {
     }
     return super._coinglassLiquidations();
   }
-  async start(){await this._loadGateContract();const out=await super.start();this.gateTimer=setInterval(()=>void this._loadGateContract(),60*60e3);this.gateTimer.unref?.();return out}
-  stop(){clearInterval(this.gateTimer);super.stop()}
+  _reportHealth(){
+    const sockets=Object.fromEntries(Object.entries(this.sockets).map(([k,v])=>[k,{status:v?.status||'UNKNOWN',last_message_at:v?.last_message_at||null,normalization:v?.normalization||null}]));
+    const ch=this.clickhouseWriter?.health?.()||{};
+    this.log?.info?.({type:'market_health',at:now(),sockets,clickhouse:{trade_buffer:ch.trade_buffer,book_buffer:ch.book_buffer,quarantined_batches:ch.quarantined_batches,last_trade_flush_at:ch.last_trade_flush_at,last_book_flush_at:ch.last_book_flush_at,last_error:ch.last_error},redis:this.redisPublisher?.health?.()||null},'BTC direct-market health');
+  }
+  async start(){
+    await this._loadGateContract();
+    const out=await super.start();
+    this.gateTimer=setInterval(()=>void this._loadGateContract(),60*60e3);this.gateTimer.unref?.();
+    this.healthTimer=setInterval(()=>this._reportHealth(),30000);this.healthTimer.unref?.();
+    setTimeout(()=>this._reportHealth(),8000).unref?.();
+    return out;
+  }
+  stop(){clearInterval(this.gateTimer);clearInterval(this.healthTimer);super.stop()}
 }
