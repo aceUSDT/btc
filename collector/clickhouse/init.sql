@@ -8,10 +8,11 @@ DROP TABLE IF EXISTS btc.orderbook_snapshots;
 DROP TABLE IF EXISTS btc.raw_trades;
 DROP TABLE IF EXISTS btc.collector_health;
 
--- Production recovery: raw V2 trade/book history is intentionally ephemeral
--- (30 minutes / 2 hours). If the small Railway volume has previously filled,
--- recreating these two raw tables is the safest way to release old parts before
--- the V5 collector starts. Durable intelligence history is NOT dropped.
+-- Production recovery: raw V2 trade/book history is intentionally ephemeral.
+-- On the current 500 MB Railway volume we keep only a very short diagnostic
+-- window here; Redis + in-memory engines provide current state and Supabase is
+-- the durable mirror. Recreating these two raw tables frees any filled parts
+-- before V5 starts. Durable intelligence history is NOT dropped.
 DROP VIEW IF EXISTS btc.minute_flow_v2;
 DROP TABLE IF EXISTS btc.raw_trades_v2 SYNC;
 DROP TABLE IF EXISTS btc.orderbook_snapshots_v2 SYNC;
@@ -33,7 +34,7 @@ CREATE TABLE btc.raw_trades_v2
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (venue, market_type, symbol, event_time_ms, trade_id)
-TTL event_time + INTERVAL 30 MINUTE DELETE
+TTL event_time + INTERVAL 5 MINUTE DELETE
 SETTINGS index_granularity = 8192;
 
 CREATE TABLE btc.orderbook_snapshots_v2
@@ -56,7 +57,7 @@ CREATE TABLE btc.orderbook_snapshots_v2
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (venue, market_type, symbol, event_time_ms, sequence)
-TTL event_time + INTERVAL 2 HOUR DELETE
+TTL event_time + INTERVAL 5 MINUTE DELETE
 SETTINGS index_granularity = 8192;
 
 CREATE OR REPLACE VIEW btc.minute_flow_v2 AS
@@ -72,8 +73,8 @@ SELECT
 FROM btc.raw_trades_v2 FINAL
 GROUP BY minute, venue, market_type, symbol;
 
--- Compact one-row-per-minute feature history. This survives raw-table recovery
--- and is retained for one year for calibration/backtesting.
+-- Compact one-row-per-minute feature history. Supabase is the durable archive;
+-- ClickHouse keeps a bounded 30-day calibration window on the 500 MB volume.
 CREATE TABLE IF NOT EXISTS btc.intelligence_1m_v3
 (
     minute DateTime('UTC'),
@@ -99,8 +100,10 @@ CREATE TABLE IF NOT EXISTS btc.intelligence_1m_v3
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMM(minute)
 ORDER BY minute
-TTL minute + INTERVAL 365 DAY DELETE
+TTL minute + INTERVAL 30 DAY DELETE
 SETTINGS index_granularity = 8192;
+
+ALTER TABLE btc.intelligence_1m_v3 MODIFY TTL minute + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS btc.collector_health_v2
 (
@@ -112,4 +115,6 @@ CREATE TABLE IF NOT EXISTS btc.collector_health_v2
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(observed_at)
 ORDER BY (service, observed_at)
-TTL observed_at + INTERVAL 7 DAY DELETE;
+TTL observed_at + INTERVAL 2 DAY DELETE;
+
+ALTER TABLE btc.collector_health_v2 MODIFY TTL observed_at + INTERVAL 2 DAY DELETE;
